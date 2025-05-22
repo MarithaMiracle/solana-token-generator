@@ -1,16 +1,23 @@
 import { Connection, Keypair } from '@solana/web3.js';
 import { createMint, getOrCreateAssociatedTokenAccount, mintTo } from '@solana/spl-token';
-import fs from 'fs';
-import path from 'path';
 
-const RPC_URL = 'https://sly-boldest-friday.solana-devnet.quiknode.pro/2c133a9e4d5fa904934113e804047cd88517d801/';
+const RPC_URL = process.env.RPC_URL;
 const connection = new Connection(RPC_URL, 'confirmed');
 
-const keypairPath = path.resolve('./keypair.json');
-const secretKey = JSON.parse(fs.readFileSync(keypairPath, 'utf8'));
-const payer = Keypair.fromSecretKey(new Uint8Array(secretKey));
+const secretKey = Uint8Array.from(JSON.parse(process.env.PAYER_SECRET_KEY));
+const payer = Keypair.fromSecretKey(secretKey);
 
 let lastRequestTime = 0;
+
+async function ensurePayerFunded() {
+  const balance = await connection.getBalance(payer.publicKey);
+  if (balance < 1e9) {
+    console.log('Funding payer...');
+    const sig = await connection.requestAirdrop(payer.publicKey, 1e9); // 1 SOL
+    await connection.confirmTransaction(sig);
+    console.log('Payer funded.');
+  }
+}
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
@@ -30,12 +37,10 @@ export default async function handler(req, res) {
   }
 
   try {
-    const decimals = 9;
+    await ensurePayerFunded();
 
-    // Create mint token
-    const mint = await createMint(connection, payer, payer.publicKey, null, decimals);
+    const mint = await createMint(connection, payer, payer.publicKey, null, 9);
 
-    // Create associated token account
     const tokenAccount = await getOrCreateAssociatedTokenAccount(
       connection,
       payer,
@@ -43,21 +48,19 @@ export default async function handler(req, res) {
       payer.publicKey
     );
 
-    // Mint tokens (scaled by decimals)
     await mintTo(
       connection,
       payer,
       mint,
       tokenAccount.address,
       payer.publicKey,
-      parseInt(supply) * 10 ** decimals
+      BigInt(supply) * 10n ** 9n // decimals 9
     );
 
     res.status(200).json({
-      message: 'Token minted successfully!',
+      message: `Token minted successfully!`,
       mintAddress: mint.toBase58(),
       tokenAccount: tokenAccount.address.toBase58(),
-      walletAddress: payer.publicKey.toBase58(),  // <-- Add wallet address here
     });
   } catch (err) {
     console.error('Error minting token:', err);

@@ -124,7 +124,7 @@ export default function TokenForm() {
 const styles = {
   container: {
     maxWidth: 600,
-    margin: "40px auto",
+    margin: "20px auto",
     padding: 24,
     borderRadius: 12,
     background: "linear-gradient(135deg, #5e4b8b, #7a5fb4)",
