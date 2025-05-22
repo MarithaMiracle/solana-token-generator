@@ -1,5 +1,9 @@
-import { Connection, Keypair } from '@solana/web3.js';
-import { createMint, getOrCreateAssociatedTokenAccount, mintTo } from '@solana/spl-token';
+import { Connection, Keypair, PublicKey } from '@solana/web3.js';
+import {
+  createMint,
+  getOrCreateAssociatedTokenAccount,
+  mintTo,
+} from '@solana/spl-token';
 
 const RPC_URL = process.env.RPC_URL;
 const connection = new Connection(RPC_URL, 'confirmed');
@@ -26,11 +30,17 @@ export default async function handler(req, res) {
 
   const now = Date.now();
   if (now - lastRequestTime < 3000) {
-    return res.status(429).json({ message: 'Too many requests. Please wait a moment.' });
+    return res
+      .status(429)
+      .json({ message: 'Too many requests. Please wait a moment.' });
   }
   lastRequestTime = now;
 
-  const { name, symbol, supply } = req.body;
+  const { name, symbol, supply, userWallet } = req.body;
+
+  if (!userWallet) {
+    return res.status(400).json({ message: 'User wallet address missing.' });
+  }
 
   if (!supply || isNaN(supply) || supply <= 0) {
     return res.status(400).json({ message: 'Invalid supply amount' });
@@ -39,13 +49,21 @@ export default async function handler(req, res) {
   try {
     await ensurePayerFunded();
 
-    const mint = await createMint(connection, payer, payer.publicKey, null, 9);
+    const mint = await createMint(
+      connection,
+      payer,
+      payer.publicKey, // Mint authority
+      null,
+      9
+    );
+
+    const userPublicKey = new PublicKey(userWallet);
 
     const tokenAccount = await getOrCreateAssociatedTokenAccount(
       connection,
       payer,
       mint,
-      payer.publicKey
+      userPublicKey
     );
 
     await mintTo(
@@ -58,12 +76,14 @@ export default async function handler(req, res) {
     );
 
     res.status(200).json({
-      message: `Token minted successfully!`,
+      message: 'Token minted successfully!',
       mintAddress: mint.toBase58(),
       tokenAccount: tokenAccount.address.toBase58(),
     });
   } catch (err) {
     console.error('Error minting token:', err);
-    res.status(500).json({ message: 'Token creation failed', error: err.message });
+    res
+      .status(500)
+      .json({ message: 'Token creation failed', error: err.message });
   }
 }

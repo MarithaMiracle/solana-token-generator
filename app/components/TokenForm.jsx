@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 
 export default function TokenForm() {
   const [name, setName] = useState("");
@@ -10,24 +10,51 @@ export default function TokenForm() {
   const [walletAddress, setWalletAddress] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [phantomInstalled, setPhantomInstalled] = useState(false);
+  const [connectedWallet, setConnectedWallet] = useState(null);
 
-  async function handleSubmit(e) {
+  useEffect(() => {
+    if (window?.solana?.isPhantom) {
+      setPhantomInstalled(true);
+    }
+  }, []);
+
+  const connectWallet = async () => {
+    try {
+      const resp = await window.solana.connect();
+      setConnectedWallet(resp.publicKey.toString());
+    } catch (err) {
+      setError("Wallet connection failed");
+    }
+  };
+
+  const handleSubmit = async (e) => {
     e.preventDefault();
     setError("");
     setLoading(true);
     setMintAddress("");
     setWalletAddress("");
 
+    if (!connectedWallet) {
+      setError("Connect your Phantom wallet first.");
+      setLoading(false);
+      return;
+    }
+
     try {
       const res = await fetch("/api/create-token", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, symbol, supply }),
+        body: JSON.stringify({
+          name,
+          symbol,
+          supply,
+          userWallet: connectedWallet,
+        }),
       });
 
       const data = await res.json();
-
-      if (!res.ok) throw new Error(data.message || "Error minting token");
+      if (!res.ok) throw new Error(data.message || "Minting failed");
 
       setMintAddress(data.mintAddress);
       setWalletAddress(data.tokenAccount);
@@ -36,16 +63,31 @@ export default function TokenForm() {
     } finally {
       setLoading(false);
     }
-  }
+  };
 
-  function copyToClipboard(text) {
+  const copyToClipboard = (text) => {
     navigator.clipboard.writeText(text);
     alert("Copied to clipboard!");
-  }
+  };
 
   return (
     <div style={styles.container}>
       <h1 style={styles.title}>Token Generator</h1>
+
+      {!connectedWallet ? (
+        phantomInstalled ? (
+          <button style={styles.button} onClick={connectWallet}>
+            Connect Phantom Wallet
+          </button>
+        ) : (
+          <p style={{ color: "red" }}>Phantom wallet not detected.</p>
+        )
+      ) : (
+        <p style={{ fontSize: 14, marginBottom: 20 }}>
+          Connected Wallet:{" "}
+          <span style={{ fontWeight: "bold" }}>{connectedWallet}</span>
+        </p>
+      )}
 
       <form onSubmit={handleSubmit} style={styles.form}>
         <label style={styles.label}>
@@ -55,7 +97,6 @@ export default function TokenForm() {
             type="text"
             value={name}
             onChange={(e) => setName(e.target.value)}
-            placeholder="Input Token Name"
             required
           />
         </label>
@@ -67,7 +108,6 @@ export default function TokenForm() {
             type="text"
             value={symbol}
             onChange={(e) => setSymbol(e.target.value)}
-            placeholder="Input Token Symbol"
             required
           />
         </label>
@@ -77,10 +117,8 @@ export default function TokenForm() {
           <input
             style={styles.input}
             type="number"
-            min="1"
             value={supply}
             onChange={(e) => setSupply(e.target.value)}
-            placeholder="Input Token Supply, e.g. 100"
             required
           />
         </label>
@@ -99,18 +137,15 @@ export default function TokenForm() {
             <span
               style={styles.mintAddress}
               onClick={() => copyToClipboard(mintAddress)}
-              title="Click to copy"
             >
               {mintAddress}
             </span>
           </p>
-
           <p style={styles.resultRow}>
-            <strong>Wallet Address:</strong>{" "}
+            <strong>Token Account:</strong>{" "}
             <span
               style={styles.mintAddress}
               onClick={() => copyToClipboard(walletAddress)}
-              title="Click to copy"
             >
               {walletAddress}
             </span>
@@ -130,8 +165,6 @@ const styles = {
     background: "linear-gradient(135deg, #5e4b8b, #7a5fb4)",
     color: "#e0d7f5",
     fontFamily: "'Segoe UI', Tahoma, Geneva, Verdana, sans-serif",
-    boxShadow:
-      "0 8px 20px rgba(95, 75, 135, 0.6), 0 0 40px rgba(122, 95, 180, 0.7)",
   },
   title: {
     textAlign: "center",
@@ -161,7 +194,6 @@ const styles = {
     boxSizing: "border-box",
   },
   button: {
-    marginTop: 10,
     padding: "14px 16px",
     fontSize: 20,
     fontWeight: "700",
